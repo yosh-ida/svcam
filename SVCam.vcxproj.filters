@@ -40,7 +40,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="SVCam.def">
+    <None Include="module.def">
       <Filter>Source Files</Filter>
     </None>
   </ItemGroup>

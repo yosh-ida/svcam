@@ -1,6 +1,6 @@
-LIBRARY     SVCam.dll
+LIBRARY     "SVCam"
+
 EXPORTS
-            DllMain                 PRIVATE
             DllGetClassObject       PRIVATE
             DllCanUnloadNow         PRIVATE
             DllRegisterServer       PRIVATE

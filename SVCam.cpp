@@ -4,8 +4,8 @@
 #include "stdafx.h"
 #include "SVCam.h"
 
-
-
+#include <stdio.h>
+#include <VideoProc.h>
 
 //////////////////////////////////////////////////////////////////////////
 //  CSimpleVirtualCamFilter is the source filter which masquerades as a capture device
@@ -46,13 +46,19 @@ HRESULT CSimpleVirtualCamFilter::QueryInterface(REFIID riid, void **ppv)
 CSimpleVirtualCamFilterStream::CSimpleVirtualCamFilterStream(HRESULT *phr, CSimpleVirtualCamFilter *pParent, LPCWSTR pPinName) :
 CSourceStream(NAME("Simple Virtual Cam"), phr, pParent, pPinName), m_pParent(pParent)
 {
-	// Set the default media type as 640x480x24@30
+	m_BmpData = NULL;
+	m_Hdc = NULL;
+	m_Bitmap = NULL;
+	VideoInit(WINDOW_WIDTH, WINDOW_HEIGHT);
 	GetMediaType(8, &m_mt);
 }
 
 CSimpleVirtualCamFilterStream::~CSimpleVirtualCamFilterStream()
 {
-
+	VideoTerminate();
+	if (m_Bitmap) DeleteObject(m_Bitmap);
+	if (m_Hdc) DeleteDC(m_Hdc);
+	if (m_BmpData) delete m_BmpData;
 }
 
 ULONG CSimpleVirtualCamFilterStream::Release(){
@@ -83,24 +89,53 @@ HRESULT CSimpleVirtualCamFilterStream::QueryInterface(REFIID riid, void **ppv)
 ///////////////////////////////////////////////////////////
 HRESULT CSimpleVirtualCamFilterStream::FillBuffer(IMediaSample *pms)
 {
-	REFERENCE_TIME rtNow;
+	HRESULT hr = E_FAIL;
+	CheckPointer(pms, E_POINTER);
+	// ダウンストリームフィルタが
+	// フォーマットを動的に変えていないかチェック
+	ASSERT(m_mt.formattype == FORMAT_VideoInfo);
+	ASSERT(m_mt.cbFormat >= sizeof(VIDEOINFOHEADER));
+	// フレームに書き込み
+	LPBYTE pSampleData = NULL;
+	const long size = pms->GetSize();
+	pms->GetPointer(&pSampleData);
 
-	REFERENCE_TIME avgFrameTime = ((VIDEOINFOHEADER*)m_mt.pbFormat)->AvgTimePerFrame;
+	CRefTime ref;
+	m_pFilter->StreamTime(ref);
 
-	rtNow = m_rtLastTime;
-	m_rtLastTime += avgFrameTime;
-	pms->SetTime(&rtNow, &m_rtLastTime);
+	IReferenceClock *clock;
+	m_pFilter->GetSyncSource(&clock);
+	REFERENCE_TIME stime;
+	clock->GetTime(&stime);
+
+	/*_snwprintf_s(buffer, _countof(buffer), _TRUNCATE, TEXT("%09d"), ref.Millisecs());
+	TextOut(m_Hdc, 0, 0, buffer, lstrlen(buffer));
+	clock->Release();
+
+	VIDEOINFO *pvi = (VIDEOINFO *)m_mt.Format();
+
+	GetDIBits(m_Hdc, m_Bitmap, 0, WINDOW_HEIGHT,
+		pSampleData, (BITMAPINFO*)&pvi->bmiHeader, DIB_RGB_COLORS);
+	*/
+	VideoProc(m_Hdc);
+	TextOut(m_Hdc, 0, 0, L"あいうえお", lstrlen(L"あいうえお"));
+	clock->Release();
+	VIDEOINFO *pvi = (VIDEOINFO *)m_mt.Format();
+	GetDIBits(m_Hdc, m_Bitmap, 0, WINDOW_HEIGHT,
+		pSampleData, (BITMAPINFO*)&pvi->bmiHeader, DIB_RGB_COLORS);
+
+	const REFERENCE_TIME delta = m_rtFrameLength;
+	REFERENCE_TIME start_time = ref;
+	FILTER_STATE state;
+	m_pFilter->GetState(0, &state);
+	if (state == State_Paused)
+		start_time = 0;
+	REFERENCE_TIME end_time = (start_time + delta);
+	pms->SetTime(&start_time, &end_time);
+	pms->SetActualDataLength(size);
 	pms->SetSyncPoint(TRUE);
 
-	BYTE *pData;
-	long lDataLen;
-	pms->GetPointer(&pData);
-	lDataLen = pms->GetSize();
-	for (int i = 0; i < lDataLen; ++i)
-		pData[i] = rand();
-
-	return NOERROR;
-
+	return S_OK;
 }
 
 //
@@ -140,13 +175,13 @@ HRESULT CSimpleVirtualCamFilterStream::GetMediaType(int iPosition, CMediaType *p
 	pvi->bmiHeader.biCompression = BI_RGB;
 	pvi->bmiHeader.biBitCount = 24;
 	pvi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	pvi->bmiHeader.biWidth = 80 * iPosition;
-	pvi->bmiHeader.biHeight = 60 * iPosition;
+	pvi->bmiHeader.biWidth = WINDOW_WIDTH;
+	pvi->bmiHeader.biHeight = WINDOW_HEIGHT;
 	pvi->bmiHeader.biPlanes = 1;
 	pvi->bmiHeader.biSizeImage = GetBitmapSize(&pvi->bmiHeader);
 	pvi->bmiHeader.biClrImportant = 0;
 
-	pvi->AvgTimePerFrame = 1000000;
+	pvi->AvgTimePerFrame = m_rtFrameLength;
 
 	SetRectEmpty(&(pvi->rcSource)); // we want the whole image area rendered.
 	SetRectEmpty(&(pvi->rcTarget)); // no particular destination rectangle
@@ -159,6 +194,20 @@ HRESULT CSimpleVirtualCamFilterStream::GetMediaType(int iPosition, CMediaType *p
 	const GUID SubTypeGUID = GetBitmapSubtype(&pvi->bmiHeader);
 	pmt->SetSubtype(&SubTypeGUID);
 	pmt->SetSampleSize(pvi->bmiHeader.biSizeImage);
+
+	if (m_BmpData) delete m_BmpData;
+	m_BmpData = new DWORD[pvi->bmiHeader.biWidth * pvi->bmiHeader.biHeight];
+	memset(m_BmpData, 0, pmt->GetSampleSize());
+	HDC dwhdc = GetDC(GetDesktopWindow());
+	m_Bitmap = CreateDIBitmap(dwhdc, &pvi->bmiHeader, CBM_INIT, m_BmpData, (BITMAPINFO*)(&pvi->bmiHeader), DIB_RGB_COLORS);
+	if (m_Hdc)
+	{
+		DeleteDC(m_Hdc);
+		m_Hdc = NULL;
+	}
+	m_Hdc = CreateCompatibleDC(dwhdc);
+	SelectObject(m_Hdc, m_Bitmap);
+	ReleaseDC(GetDesktopWindow(), dwhdc);
 
 	return NOERROR;
 

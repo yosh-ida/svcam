@@ -1,0 +1,6 @@
+LIBRARY     "VideoProcess"
+
+EXPORTS
+            VideoProc
+			VideoInit
+			VideoTerminate

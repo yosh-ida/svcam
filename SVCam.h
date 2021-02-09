@@ -100,7 +100,15 @@ private:
 	HBITMAP m_hLogoBmp;
 	CCritSec m_cSharedState;
 	IReferenceClock *m_pClock;
-	
+
+	HBITMAP m_Bitmap;
+	LPDWORD m_BmpData;
+	HDC     m_Hdc;
+
+	static const UINT FPS = 1;
+	static constexpr REFERENCE_TIME m_rtFrameLength = 10000000 / FPS;
+	static const UINT WINDOW_HEIGHT = 360;
+	static const UINT WINDOW_WIDTH = 640;
 }; // CSimpleVirtualCamFilterStream
 
 

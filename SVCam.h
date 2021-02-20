@@ -105,10 +105,13 @@ private:
 	LPDWORD m_BmpData;
 	HDC     m_Hdc;
 
-	static const UINT FPS = 1;
+	VIDEOINFOHEADER *pvi;
+
+	static const UINT FPS = 10;
 	static constexpr REFERENCE_TIME m_rtFrameLength = 10000000 / FPS;
 	static const UINT WINDOW_HEIGHT = 360;
 	static const UINT WINDOW_WIDTH = 640;
+	static const UINT BITCOUNT = 24;
 }; // CSimpleVirtualCamFilterStream
 
 

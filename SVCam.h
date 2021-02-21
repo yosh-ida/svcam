@@ -107,7 +107,7 @@ private:
 
 	VIDEOINFOHEADER *pvi;
 
-	static const UINT FPS = 10;
+	static const UINT FPS = 30;
 	static constexpr REFERENCE_TIME m_rtFrameLength = 10000000 / FPS;
 	static const UINT WINDOW_HEIGHT = 360;
 	static const UINT WINDOW_WIDTH = 640;
